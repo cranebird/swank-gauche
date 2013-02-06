@@ -101,8 +101,9 @@
 
 
 ;;;; logging
-(define log-port #f)
-;;(define log-port (current-output-port))
+;;(define log-port #f)
+(define log-port (current-output-port))
+
 (define-macro (log-event fstring . args)
   `(when log-port
      (format log-port ,fstring ,@args)
@@ -1120,3 +1121,8 @@ Return nil if there's no previous object."
 (defslimefun describe-function (name)
   ;; in scheme, function and variable in same namespace.
   (describe-symbol name))
+
+;; eval-in-emacs
+;; TODO: add nowait option
+(define (eval-in-emacs form)
+  (send-to-emacs `(:eval ,(current-thread-id) ,(make-tag) ,form)))
