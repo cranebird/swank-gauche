@@ -54,8 +54,12 @@
 
 (select-module swank-gauche)
 
+;; (define (swank port)
+;;   (make-swank-server (or port 4005) #f))
+;; 20130626
 (define (swank port)
-  (make-swank-server (or port 4005) #f))
+  (make-swank-server (or port 4008) #f))
+
 (define (start-swank port-file)
   (make-swank-server #f port-file))
 
@@ -84,14 +88,14 @@
 (define (1- n) (- n 1))
 
 (define (write-to-string/ss s) (write-to-string s write/ss))
-(define (describe-to-string s)  (with-output-to-string (lambda () (describe s))))
+(define (describe-to-string s) (with-output-to-string (lambda () (describe s))))
 (define pretty-printer write-to-string/ss)
 
 (define (group2 rest)
-    (if (null? rest)
-	'()
-	(cons (list (car rest) (cadr rest))
-	      (group2 (cddr rest)))))
+  (if (null? rest)
+      '()
+      (cons (list (car rest) (cadr rest))
+            (group2 (cddr rest)))))
 
 (define-macro (set!* . rest)
   `(begin
@@ -115,11 +119,10 @@
 
 ;;;; Networking
 (define (make-swank-server port port-file)
-  (let ((server   (make-server-socket (make <sockaddr-in>
-                                        :host :loopback
-                                        :port (or port 0))
-				      :reuse-addr? #t)))
-
+  (let ((server (make-server-socket (make <sockaddr-in>
+                                      :host :loopback
+                                      :port (or port 0))
+                                    :reuse-addr? #t)))
     (define (accept-handler sock)
       (let* ((client (socket-accept sock))
              (output (socket-output-port client))
@@ -179,7 +182,7 @@
 (define (wait-for-event/event-loop pattern timeout)
   ;; (assert (or (not timeout) (eq timeout t)))
   (let loop ()
-    ;(check-slime-interrupts)
+    ;; (check-slime-interrupts)
     (cond ((poll-for-event pattern) => id)
           ((read-packet) =>
            (lambda (packet)
@@ -311,11 +314,11 @@
     ((:emacs-interrupt thread-id)
      (interrupt-worker-thread thread-id))
     (((or :write-string 
-	   :debug :debug-condition :debug-activate :debug-return :channel-send
-	   :presentation-start :presentation-end
-	   :new-package :new-features :ed :%apply :indentation-update
-	   :eval :eval-no-wait :background-message :inspect :ping
-	   :y-or-n-p :read-string :read-aborted :return) params ...)
+          :debug :debug-condition :debug-activate :debug-return :channel-send
+          :presentation-start :presentation-end
+          :new-package :new-features :ed :%apply :indentation-update
+          :eval :eval-no-wait :background-message :inspect :ping
+          :y-or-n-p :read-string :read-aborted :return) params ...)
      (write-packet event))
     (_
      (log-event "Unknown event: ~s~%" event))))
@@ -373,7 +376,7 @@
           (flush out)
           (close-output-port out)
           (close-input-port in)))))
-                
+
 (define (emacs-rex sexp package thread id)
   (parameterize
       ((*emacs-packet-id* id)
@@ -385,7 +388,27 @@
 	  (write-abort "Not Impremented: ~s" (car sexp)))
         (with-error-handler
           (lambda (e)
-            (with-io-repl (lambda () (report-error e))))
+            (with-io-repl
+             (lambda ()
+               ;;(display ";; Oh my gosh, error occured: \n")
+               ;;(display (x->string (class-name (class-of e))))
+               (send-to-emacs
+                `(:debug
+                  ,(current-thread-id) ;; thread
+                  1 ;; level
+                  (,(x->string (class-name (class-of e)))
+                   ,(x->string (ref e 'message))
+                   (("extras"))) ;;condition TODO what extras?
+                  (("Retry" "Retry SLIME-Gauche REPL evaluation request.")
+                   ("ABORT" "Exit debugger, returning to top level.")
+                   ) ;; restarts
+                  ((0 "frame 0")) ;; frames
+                  () ;; conts
+                  ))
+               (newline)
+               #f
+               ;;(report-error e)
+               )))
 	  (lambda ()
 	    (let ((ok #f))
 	      (dynamic-wind
@@ -397,31 +420,81 @@
 		  (lambda ()
 		    (unless ok
 		      (write-abort "eval ~a" sexp))))))))))
+                
+;; (define (emacs-rex sexp package thread id)
+;;   (parameterize
+;;       ((*emacs-packet-id* id)
+;;        (*buffer-package* (module-symbol package)))
+;;     (if (and (list? sexp)
+;; 	     (not (swank-gauche:bound? (car sexp))))
+;;         (begin
+;; 	  (log-event "Not Impremented: ~s~%" (car sexp))
+;; 	  (write-abort "Not Impremented: ~s" (car sexp)))
+;;         (with-error-handler
+;;           (lambda (e)
+;;             (with-io-repl
+;;              (lambda ()
+;;                (report-error e)
+;;                )))
+;; 	  (lambda ()
+;; 	    (let ((ok #f))
+;; 	      (dynamic-wind
+;; 		  (lambda () #f)
+;; 		  (lambda () 
+;; 		    (write-return `(:ok ,(apply (swank-gauche: (car sexp))
+;; 						(cdr sexp))))
+;; 		    (set! ok #t))
+;; 		  (lambda ()
+;; 		    (unless ok
+;; 		      (write-abort "eval ~a" sexp))))))))))
+;; (define (emacs-rex sexp package thread id)
+;;   (parameterize
+;;       ((*emacs-packet-id* id)
+;;        (*buffer-package* (module-symbol package)))
+;;     (if (and (list? sexp)
+;; 	     (not (swank-gauche:bound? (car sexp))))
+;;         (begin
+;; 	  (log-event "Not Impremented: ~s~%" (car sexp))
+;; 	  (write-abort "Not Impremented: ~s" (car sexp)))
+;;         (with-error-handler
+;;           (lambda (e)
+;;             (with-io-repl (lambda () (report-error e))))
+;; 	  (lambda ()
+;; 	    (let ((ok #f))
+;; 	      (dynamic-wind
+;; 		  (lambda () #f)
+;; 		  (lambda () 
+;; 		    (write-return `(:ok ,(apply (swank-gauche: (car sexp))
+;; 						(cdr sexp))))
+;; 		    (set! ok #t))
+;; 		  (lambda ()
+;; 		    (unless ok
+;; 		      (write-abort "eval ~a" sexp))))))))))
 
 (define (eval-region string)
   (let ((sexp (read-from-string string)))
     (if (eof-object? sexp)
         (values)
         (with-io-repl
-            (lambda ()
-              (eval sexp (user-env (*buffer-package*))))))))
+         (lambda ()
+           (eval sexp (user-env (*buffer-package*))))))))
 
 (define (eval-repl string)
   (let ((sexp (read-from-string string)))
     (if (eof-object? sexp)
         (values)
         (with-io-repl
-            (lambda ()
-	      (set!* %3 %2
-		     %2 %1
-		     %1 %0
-		     %0 sexp)
-	      (match sexp
-		(('select-module module) ;; select-module is special
-		 (eval sexp (user-env (*buffer-package*)))
-		 ((global-variable-ref 'swank-gauche 'new-package) module))
-		(else
-		 (eval sexp (user-env (*buffer-package*))))))))))
+         (lambda ()
+           (set!* %3 %2
+                  %2 %1
+                  %1 %0
+                  %0 sexp)
+           (match sexp
+             (('select-module module) ;; select-module is special
+              (eval sexp (user-env (*buffer-package*)))
+              ((global-variable-ref 'swank-gauche 'new-package) module))
+             (else
+              (eval sexp (user-env (*buffer-package*))))))))))
 
 (define *tag-counter* (make-parameter 0))
 (define (make-tag)
@@ -641,9 +714,9 @@
 
 (define (operator-and-makerindex sexp)
   (receive (index elem) (contain-marker? sexp)
-	   (if index
-	       (list (car sexp) index)
-	       #f)))
+    (if index
+        (list (car sexp) index)
+        #f)))
 
 (define (arglist-candidates form)
   (cond ((list? form)
@@ -733,8 +806,8 @@
 
 (define-macro (label-value-line* . label-values)
   `(append ,@(map (match-lambda 
-		   ((label value ... )
-		    `(label-value-line ,label ,@value)))
+                      ((label value ... )
+                       `(label-value-line ,label ,@value)))
 		  label-values)))
 
 (define (iline label value)
@@ -771,9 +844,9 @@
 	    (append-map
 	     (lambda (s)
 	       `(,(format #f " ~10s: " s)
-		  ,(if (slot-bound? o s)
-		       `(:value ,(slot-ref o s))
-		       "#<unbound>") (:newline)))
+                 ,(if (slot-bound? o s)
+                      `(:value ,(slot-ref o s))
+                      "#<unbound>") (:newline)))
 	     (map slot-definition-name slots))))))
 
 (define (cl-list? o)
@@ -843,8 +916,8 @@
    (let ((content (hash-table-map ht cons)))
      (cond ((every (lambda (x) (or-pred (first x) string? symbol?)) content)
 	    (set! content (sort content (make-compare-func 
-					  string<?
-					  (lambda (x) (x->string (first x)))))))
+                                         string<?
+                                         (lambda (x) (x->string (first x)))))))
 	   ((every (lambda (x) (number? (first x))) content)
 	    (set! content (sort content (make-compare-func < first)))))
      (append-map (lambda (key-val)
@@ -955,9 +1028,9 @@
 
 
 (define (safe-length lis)
-;; Similar to `list-length', but avoid errors on improper lists.
-;; Return two values: the length of the list and the last cdr.
-;; Return #f if LIST is circular.
+  ;; Similar to `list-length', but avoid errors on improper lists.
+  ;; Return two values: the length of the list and the last cdr.
+  ;; Return #f if LIST is circular.
   (define (iter n		;Counter.
 		fast		;Fast pointer: leaps by 2.
 		slow)		;Slow pointer: leaps by 1.
